@@ -138,12 +138,12 @@ class OwlViTRosNode : public rclcpp::Node {
             }
             int orig_w = img.cols;
             int orig_h = img.rows;
-            // Convert BGR (OpenCV) to RGB expected by the model, then preprocess
-            // cv::cvtColor(img, img, cv::COLOR_BGR2RGB);
             // Image Preprocessing: Resize and normalize
             // 768 x 768, ImageNet Mean/Std standard normalizations
             cv::Mat resized_img;
             cv::resize(img, resized_img, cv::Size(768, 768));
+            // Convert BGR (OpenCV) to RGB expected by the model, then preprocess
+            cv::cvtColor(resized_img, resized_img, cv::COLOR_BGR2RGB);
             resized_img.convertTo(resized_img, CV_32FC3, 1.0 / 255.0);
 
             // cv::Scalar mean(0.485, 0.456, 0.406);
@@ -205,20 +205,20 @@ class OwlViTRosNode : public rclcpp::Node {
             auto logits_shape = output_tensors[0].GetTensorTypeAndShapeInfo().GetShape();
             auto boxes_shape = output_tensors[1].GetTensorTypeAndShapeInfo().GetShape();
 
-            // Log output shapes for debugging
-            std::string lshape_str = "[";
-            for (size_t si = 0; si < logits_shape.size(); ++si) {
-                lshape_str += std::to_string(logits_shape[si]);
-                if (si + 1 < logits_shape.size()) lshape_str += ",";
-            }
-            lshape_str += "]";
-            std::string bshape_str = "[";
-            for (size_t si = 0; si < boxes_shape.size(); ++si) {
-                bshape_str += std::to_string(boxes_shape[si]);
-                if (si + 1 < boxes_shape.size()) bshape_str += ",";
-            }
-            bshape_str += "]";
-            RCLCPP_INFO(this->get_logger(), "Logits shape: %s, Boxes shape: %s", lshape_str.c_str(), bshape_str.c_str());
+            // // Log output shapes for debugging
+            // std::string lshape_str = "[";
+            // for (size_t si = 0; si < logits_shape.size(); ++si) {
+            //     lshape_str += std::to_string(logits_shape[si]);
+            //     if (si + 1 < logits_shape.size()) lshape_str += ",";
+            // }
+            // lshape_str += "]";
+            // std::string bshape_str = "[";
+            // for (size_t si = 0; si < boxes_shape.size(); ++si) {
+            //     bshape_str += std::to_string(boxes_shape[si]);
+            //     if (si + 1 < boxes_shape.size()) bshape_str += ",";
+            // }
+            // bshape_str += "]";
+            // RCLCPP_INFO(this->get_logger(), "Logits shape: %s, Boxes shape: %s", lshape_str.c_str(), bshape_str.c_str());
 
             int64_t num_boxes = 0;
             int64_t num_classes = 0;
@@ -230,13 +230,13 @@ class OwlViTRosNode : public rclcpp::Node {
                 num_classes = logits_shape[1];
             }
 
-            // Print a few sample logits for inspection
-            int64_t sample_count = std::min<int64_t>(10, num_boxes * std::max<int64_t>(1, num_classes));
-            for (int64_t s = 0; s < sample_count; ++s) {
-                RCLCPP_INFO(this->get_logger(), "logit[%ld]=%f", s, logits[s]);
-            }
+            // // Print a few sample logits for inspection
+            // int64_t sample_count = std::min<int64_t>(10, num_boxes * std::max<int64_t>(1, num_classes));
+            // for (int64_t s = 0; s < sample_count; ++s) {
+            //     RCLCPP_INFO(this->get_logger(), "logit[%ld]=%f", s, logits[s]);
+            // }
 
-            // Softmax+Argmax post-processing per box (assumes single best label per box)
+            // Sigmoid post-processing per box (assumes single best label per box)
             std::vector<std::tuple<float,int64_t,int64_t>> top_scores; // score, box, class
             for (int64_t i = 0; i < num_boxes; ++i) {
                 // Compute sigmoid for each class
@@ -254,7 +254,7 @@ class OwlViTRosNode : public rclcpp::Node {
                 float y_center = pred_boxes[bi * 4 + 1];
                 float width = pred_boxes[bi * 4 + 2];
                 float height = pred_boxes[bi * 4 + 3];
-                RCLCPP_INFO(this->get_logger(), "Top%d: class=%lld box=%lld softmax_score=%.6f box=[%.4f,%.4f,%.4f,%.4f]", t, (long long)cj, (long long)bi, score, x_center, y_center, width, height);
+                // RCLCPP_INFO(this->get_logger(), "Top%d: class=%lld box=%lld sigmoid_score=%.6f box=[%.4f,%.4f,%.4f,%.4f]", t, (long long)cj, (long long)bi, score, x_center, y_center, width, height);
                 // Draw boxes if above threshold and label within provided queries
                 if (score > PRED_THRESHOLD && cj < static_cast<int64_t>(text_queries_.size())) {
                     float x1 = (x_center - width / 2.0f) * orig_w;
@@ -266,7 +266,7 @@ class OwlViTRosNode : public rclcpp::Node {
                                   cv::Scalar(0, 255, 0), 2);
                     cv::putText(img, text_queries_[cj], cv::Point(static_cast<int>(x1), static_cast<int>(y1) - 5),
                                 cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 255, 0), 1);
-                    RCLCPP_INFO(this->get_logger(), "Drew '%s' (class=%lld) with softmax score %.4f", text_queries_[cj].c_str(), (long long)cj, score);
+                    RCLCPP_INFO(this->get_logger(), "Drew '%s' (class=%lld) with sigmoid score %.4f", text_queries_[cj].c_str(), (long long)cj, score);
                 }
             }
 
