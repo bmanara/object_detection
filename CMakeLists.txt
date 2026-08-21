@@ -66,7 +66,17 @@ target_link_libraries(image_object_detector PUBLIC
 
 target_link_libraries(image_object_detector PRIVATE tokenizers_cpp)
 
-install(TARGETS image_object_detector
+add_executable(video_publisher_node src/video_publisher_node.cpp)
+target_link_libraries(video_publisher_node PUBLIC
+  rclcpp::rclcpp
+  sensor_msgs::sensor_msgs_library
+  cv_bridge::cv_bridge
+  image_transport::image_transport
+  opencv_dnn
+  ${OpenCV_LIBS}
+)
+
+install(TARGETS image_object_detector video_publisher_node
   RUNTIME DESTINATION lib/${PROJECT_NAME}
 )
 
