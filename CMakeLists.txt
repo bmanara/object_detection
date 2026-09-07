@@ -5,13 +5,26 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
+set(USE_KINETO OFF CACHE BOOL "Disable Kineto profiler" FORCE)
+
 # find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
+find_package(std_msgs REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(image_transport REQUIRED)
+find_package(rosidl_default_generators REQUIRED)
 find_package(OpenCV REQUIRED COMPONENTS dnn)
+
+## Custom messages
+rosidl_generate_interfaces(${PROJECT_NAME}
+  "msg/Detection.msg"
+  "msg/DetectionArray.msg"
+  DEPENDENCIES std_msgs
+)
+
+ament_export_dependencies(rosidl_default_runtime)
 
 list(APPEND CMAKE_PREFIX_PATH "/home/bmacraze/libtorch")
 find_package(Torch REQUIRED)
@@ -89,7 +102,24 @@ target_link_libraries(video_publisher_node PUBLIC
   ${OpenCV_LIBS}
 )
 
-install(TARGETS image_object_detector video_object_detector video_publisher_node
+add_executable(visualizer_node src/visualizer_node.cpp)
+target_link_libraries(visualizer_node PUBLIC
+  rclcpp::rclcpp
+  sensor_msgs::sensor_msgs_library
+  cv_bridge::cv_bridge
+  image_transport::image_transport
+)
+
+rosidl_get_typesupport_target(cpp_typesupport_target "${PROJECT_NAME}" "rosidl_typesupport_cpp")
+target_link_libraries(image_object_detector PRIVATE "${cpp_typesupport_target}")
+target_link_libraries(video_object_detector PRIVATE "${cpp_typesupport_target}")
+target_link_libraries(visualizer_node PRIVATE "${cpp_typesupport_target}")
+
+target_include_directories(video_object_detector PRIVATE
+  ${CMAKE_CURRENT_BINARY_DIR}/rosidl_generator_cpp
+)
+
+install(TARGETS image_object_detector video_object_detector video_publisher_node visualizer_node
   RUNTIME DESTINATION lib/${PROJECT_NAME}
 )
 

@@ -6,6 +6,9 @@
 
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/image.hpp"
+#include "std_msgs/msg/header.hpp"
+#include "object_detection/msg/detection.hpp"
+#include "object_detection/msg/detection_array.hpp"
 #include "cv_bridge/cv_bridge.hpp"
 #include <opencv2/opencv.hpp>
 #include <onnxruntime_cxx_api.h>
@@ -13,7 +16,7 @@
 
 
 #define MODEL_NAME "owlvit_onnx"
-#define PRED_THRESHOLD 0.5f
+#define PRED_THRESHOLD 0.1f
 
 using tokenizers::Tokenizer;
 
@@ -47,11 +50,13 @@ class ObjectDetectionNode : public rclcpp::Node {
                 10, 
                 std::bind(&ObjectDetectionNode::image_callback, this, std::placeholders::_1)
             );
+
+            detections_pub_ = this->create_publisher<object_detection::msg::DetectionArray>("detections", 10);
         }
     
     private:
         rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr image_sub_;
-        rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr output_pub_;
+        rclcpp::Publisher<object_detection::msg::DetectionArray>::SharedPtr detections_pub_;
 
         // Cached tokenized inputs for the text queries
         std::vector<int64_t> cached_input_ids_;
@@ -218,21 +223,6 @@ class ObjectDetectionNode : public rclcpp::Node {
             auto logits_shape = output_tensors[0].GetTensorTypeAndShapeInfo().GetShape();
             auto boxes_shape = output_tensors[1].GetTensorTypeAndShapeInfo().GetShape();
 
-            // // Log output shapes for debugging
-            // std::string lshape_str = "[";
-            // for (size_t si = 0; si < logits_shape.size(); ++si) {
-            //     lshape_str += std::to_string(logits_shape[si]);
-            //     if (si + 1 < logits_shape.size()) lshape_str += ",";
-            // }
-            // lshape_str += "]";
-            // std::string bshape_str = "[";
-            // for (size_t si = 0; si < boxes_shape.size(); ++si) {
-            //     bshape_str += std::to_string(boxes_shape[si]);
-            //     if (si + 1 < boxes_shape.size()) bshape_str += ",";
-            // }
-            // bshape_str += "]";
-            // RCLCPP_INFO(this->get_logger(), "Logits shape: %s, Boxes shape: %s", lshape_str.c_str(), bshape_str.c_str());
-
             int64_t num_boxes = 0;
             int64_t num_classes = 0;
             if (logits_shape.size() == 3) {
@@ -243,50 +233,14 @@ class ObjectDetectionNode : public rclcpp::Node {
                 num_classes = logits_shape[1];
             }
 
-            // // Print a few sample logits for inspection
-            // int64_t sample_count = std::min<int64_t>(10, num_boxes * std::max<int64_t>(1, num_classes));
-            // for (int64_t s = 0; s < sample_count; ++s) {
-            //     RCLCPP_INFO(this->get_logger(), "logit[%ld]=%f", s, logits[s]);
-            // }
-
-            // Sigmoid post-processing per box (assumes single best label per box)
-            std::vector<std::tuple<float,int64_t,int64_t>> top_scores; // score, box, class
-            for (int64_t i = 0; i < num_boxes; ++i) {
-                // Compute sigmoid for each class
-                for (int64_t j = 0; j < num_classes; ++j) {
-                    float logit_value = logits[i * num_classes + j];
-                    float score = 1.0f / (1.0f + exp(-logit_value)); // Sigmoid
-                    top_scores.emplace_back(score, i, j);
-                }
-            }
-            std::sort(top_scores.begin(), top_scores.end(), [](auto &a, auto &b){ return std::get<0>(a) > std::get<0>(b); });
-            int topN = std::min<size_t>(5, top_scores.size());
-            for (int t = 0; t < topN; ++t) {
-                auto [score, bi, cj] = top_scores[t];
-                float x_center = pred_boxes[bi * 4 + 0];
-                float y_center = pred_boxes[bi * 4 + 1];
-                float width = pred_boxes[bi * 4 + 2];
-                float height = pred_boxes[bi * 4 + 3];
-                // RCLCPP_INFO(this->get_logger(), "Top%d: class=%lld box=%lld sigmoid_score=%.6f box=[%.4f,%.4f,%.4f,%.4f]", t, (long long)cj, (long long)bi, score, x_center, y_center, width, height);
-                // Draw boxes if above threshold and label within provided queries
-                if (score > PRED_THRESHOLD && cj < static_cast<int64_t>(text_queries_.size())) {
-                    float x1 = (x_center - width / 2.0f) * orig_w;
-                    float y1 = (y_center - height / 2.0f) * orig_h;
-                    float x2 = (x_center + width / 2.0f) * orig_w;
-                    float y2 = (y_center + height / 2.0f) * orig_h;
-                    cv::rectangle(img, cv::Point(static_cast<int>(x1), static_cast<int>(y1)),
-                                  cv::Point(static_cast<int>(x2), static_cast<int>(y2)),
-                                  cv::Scalar(0, 255, 0), 2);
-                    cv::putText(img, text_queries_[cj], cv::Point(static_cast<int>(x1), static_cast<int>(y1) - 5),
-                                cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 255, 0), 1);
-                    RCLCPP_INFO(this->get_logger(), "Drew '%s' (class=%lld) with sigmoid score %.4f", text_queries_[cj].c_str(), (long long)cj, score);
-                }
-            }
+            auto detections_msg = object_detection::msg::DetectionArray();
+            detections_msg.header.stamp = this->now();
+            detections_msg.header.frame_id = "camera";
 
             for (int64_t i = 0; i < num_boxes; ++i) {
                 for (int64_t j = 0; j < num_classes; ++j) {
                     float logit_value = logits[i * num_classes + j];
-                    float score = 1.0f / (1.0f + exp(-logit_value)); // Sigmoid
+                    float score = 1.0f / (1.0f + exp(-logit_value));
 
                     if (score > PRED_THRESHOLD && j < static_cast<int64_t>(text_queries_.size())) {
                         float x_center = pred_boxes[i * 4 + 0];
@@ -299,6 +253,17 @@ class ObjectDetectionNode : public rclcpp::Node {
                         float x2 = (x_center + width / 2.0f) * orig_w;
                         float y2 = (y_center + height / 2.0f) * orig_h;
 
+                        object_detection::msg::Detection detection;
+                        detection.header.stamp = this->now();
+                        detection.header.frame_id = "camera";
+                        detection.label = text_queries_[j];
+                        detection.score = score;
+                        detection.x = x1;
+                        detection.y = y1;
+                        detection.width = x2 - x1;
+                        detection.height = y2 - y1;
+                        detections_msg.detections.push_back(detection);
+
                         cv::rectangle(img, cv::Point(static_cast<int>(x1), static_cast<int>(y1)),
                                       cv::Point(static_cast<int>(x2), static_cast<int>(y2)),
                                       cv::Scalar(0, 255, 0), 2);
@@ -309,6 +274,10 @@ class ObjectDetectionNode : public rclcpp::Node {
                                     text_queries_[j].c_str(), score, x1, y1, x2, y2);
                     }
                 }
+            }
+
+            if (!detections_msg.detections.empty()) {
+                detections_pub_->publish(detections_msg);
             }
 
             // Save to the same images directory the node logs, and report the actual path used.
