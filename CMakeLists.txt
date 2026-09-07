@@ -108,6 +108,7 @@ target_link_libraries(visualizer_node PUBLIC
   sensor_msgs::sensor_msgs_library
   cv_bridge::cv_bridge
   image_transport::image_transport
+  ${OpenCV_LIBS}
 )
 
 rosidl_get_typesupport_target(cpp_typesupport_target "${PROJECT_NAME}" "rosidl_typesupport_cpp")
@@ -117,6 +118,12 @@ target_link_libraries(visualizer_node PRIVATE "${cpp_typesupport_target}")
 
 target_include_directories(video_object_detector PRIVATE
   ${CMAKE_CURRENT_BINARY_DIR}/rosidl_generator_cpp
+  ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}/rosidl_generator_cpp
+)
+
+target_include_directories(visualizer_node PRIVATE
+  ${CMAKE_CURRENT_BINARY_DIR}/rosidl_generator_cpp
+  ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}/rosidl_generator_cpp
 )
 
 install(TARGETS image_object_detector video_object_detector video_publisher_node visualizer_node
