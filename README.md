@@ -95,6 +95,7 @@ The image file used by the node is currently hard-coded in `src/image_object_det
 - The detection node uses a built-in list of labels such as `table`, `chair`, `person`, `cat`, `dog`, `laptop`, and others.
 - The detection threshold is set in the source code (`PRED_THRESHOLD`), and you can tune it if the model is too strict or too loose.
 - Both detection nodes expect the model file and tokenizer to be in the `models/owlvit_onnx` directory.
+- You can safely ignore warnings regarding kineto not being found (not used...)
 
 ## Typical workflow
 
@@ -106,6 +107,8 @@ source install/setup.bash
 ros2 run object_detection video_publisher_node
 # in another terminal:
 ros2 run object_detection video_object_detector
+# in another terminal (optional, if you want to see video feed)
+ros2 run object_detection visualizer_node
 ```
 
 Or, for a one-off image run:
@@ -125,3 +128,13 @@ If the node fails to start:
 - ensure `tokenizers_cpp` is available to the CMake build
 
 If you want, I can also add a small launch file so you can start the camera publisher and detector together with one command.
+
+---
+# Devlog
+
+TODO:
+- [x] Create node that can process image with ONNX runtime for object detection
+- [x] Create node that can publish video feeds
+- [x] Create node that can visualize video feed with predictions
+- [ ] Depth estimation
+- [ ] 3D segmentation
