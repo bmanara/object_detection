@@ -138,3 +138,22 @@ TODO:
 - [x] Create node that can visualize video feed with predictions
 - [ ] Depth estimation
 - [ ] 3D segmentation
+
+---
+## Acknowledgements
+
+This project uses the OwlViT (Vision Transformer for Open-Vocabulary Object Detection) model. 
+
+**Reference:**
+Minderer, M., Gritsenko, A., Stone, A., Neumann, M., Weissenborn, D., Dosovitskiy, A., ... & Houlsby, N. (2022). Simple Open-Vocabulary Object Detection with Vision Transformers. In *Computer Vision–ECCV 2022* (pp. 728-755). Springer Nature Switzerland.
+
+**BibTeX:**
+```bibtex
+@inproceedings{minderer2022simple,
+  title={Simple Open-Vocabulary Object Detection with Vision Transformers},
+  author={Minderer, Matthias and Gritsenko, Alexey and Stone, Austin and Neumann, Maxim and Weissenborn, Dirk and Dosovitskiy, Alexey and Mahendran, Aravindh and Arnab, Anurag and Dehghani, Mostafa and Shen, Zhuoran and Wang, Xiao and Zhai, Xiaohua and Kipf, Thomas and Houlsby, Neil},
+  booktitle={Computer Vision -- ECCV 2022},
+  year={2022},
+  publisher={Springer}
+}
+```
