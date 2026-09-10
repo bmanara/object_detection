@@ -130,4 +130,8 @@ install(TARGETS image_object_detector video_object_detector video_publisher_node
   RUNTIME DESTINATION lib/${PROJECT_NAME}
 )
 
+install(DIRECTORY launch
+  DESTINATION share/${PROJECT_NAME}/
+)
+
 ament_package()
