@@ -48,6 +48,9 @@ class VisualizerNode : public rclcpp::Node {
                 return;
             }
 
+            RCLCPP_DEBUG(this->get_logger(), "Received synchronized image and detections. Image size: %dx%d, Detections count: %zu",
+                         frame.cols, frame.rows, det_msg->detections.size());
+
             for (const auto& detection : det_msg->detections) {
                 cv::rectangle(
                     frame,
@@ -66,6 +69,7 @@ class VisualizerNode : public rclcpp::Node {
                     2
                 );
             }
+            RCLCPP_DEBUG(this->get_logger(), "Displaying frame with %zu detections", det_msg->detections.size());
 
             cv::imshow("Detections", frame);
             cv::waitKey(1);
