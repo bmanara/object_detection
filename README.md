@@ -1,10 +1,13 @@
 # Object Detection ROS 2 Package
 
-This package contains a small ROS 2 demo for zero-shot object detection using an OwlViT ONNX model. It includes:
+This package contains a small ROS 2 demo for zero-shot object detection using an OwlViT ONNX model, plus monocular depth estimation using Depth Anything V2. It includes:
 
 - an image-based detector
 - a video stream detector
+- a depth estimation node
 - a simple webcam/video publisher node
+- a visualizer node that shows detections and depth maps
+- a launch file that starts everything together
 
 The code is set up to run in a ROS 2 Kilted workspace and expects a local ONNX Runtime install, LibTorch, and the model files in the package folder.
 
@@ -20,13 +23,20 @@ Before building, make sure the following are available:
 - A local `tokenizers-cpp` checkout at `~/tokenizers-cpp`
 - Python packages for the build environment are not required for the ROS nodes themselves, but a normal ROS 2 development environment is assumed
 
-The package also expects these files to exist:
+The package also expects these files to exist under `~/ros2_kilted_ws/src/object_detection/`:
 
-- `~/ros2_kilted_ws/src/object_detection/models/owlvit_onnx/model.onnx`
-- `~/ros2_kilted_ws/src/object_detection/models/owlvit_onnx/tokenizer.json`
-- sample image input at `~/ros2_kilted_ws/src/object_detection/images/room.jpeg`
+| File | Used by |
+|---|---|
+| `models/owlvit_onnx/tokenizer.json` | both detectors |
+| `models/owlvit_onnx/text_encoder.onnx` | `video_object_detector` (runs once at startup) |
+| `models/owlvit_onnx/image_detector_int8.onnx` | `video_object_detector` (runs every frame) |
+| `models/owlvit_onnx/model.onnx` | `image_object_detector` |
+| `models/depth_anything_v2_small_indoor/model_int8.onnx` | `depth_estimation_node` |
+| `images/room.jpeg` | `image_object_detector` (sample input) |
 
-> The model and source paths are currently hard-coded in the C++ source files, so keep the layout above unless you update the code.
+`text_encoder.onnx`, `image_detector_int8.onnx` and `model_int8.onnx` are generated from the original models by the scripts in [`scripts/`](scripts/README.md). See that README for how to regenerate them and how the OwlViT model is split into a text encoder and an image detector.
+
+> The model and source paths are currently hard-coded in the C++ source files, so keep the layout above unless you update the code. The `models/` folder is gitignored.
 
 ## Setup
 
@@ -64,21 +74,39 @@ If you want to use a file instead of the webcam, edit the `cap_.open(0);` line i
 
 ### 2) Run object detection on the live video stream
 
-This node subscribes to `/video_stream`, runs OwlViT inference, draws bounding boxes, and saves the output image to:
+This node subscribes to `/video_stream`, runs OwlViT inference on the newest frame, and publishes the results on `/detections` (`object_detection/msg/DetectionArray`). Each detection array is stamped with the timestamp of the frame it was computed from, so it can be matched back to that frame.
 
-```text
-~/ros2_kilted_ws/src/object_detection/images/output_image.jpg
-```
-
-Start it with:
+The text prompts are encoded once at startup with `text_encoder.onnx`; only the INT8 image detector runs per frame.
 
 ```bash
 ros2 run object_detection video_object_detector
 ```
 
-### 3) Run object detection on a single image
+### 3) Run depth estimation on the live video stream
 
-This node loads a fixed local image, processes it once, and saves the result to the same output path as above.
+This node subscribes to `/video_stream`, runs Depth Anything V2 (metric, indoor) on the newest frame, and publishes a depth map at the original frame resolution on `/depth_map` (`object_detection/msg/DepthMap`), stamped with the source frame's timestamp.
+
+```bash
+ros2 run object_detection depth_estimation_node
+```
+
+### 4) Visualize detections and depth
+
+This node matches each `/detections` message with the `/video_stream` frame that has the same timestamp and draws the boxes in a "Detections" window. It also shows `/depth_map` as a colormap in a "Depth Map" window.
+
+```bash
+ros2 run object_detection visualizer_node
+```
+
+> The Detections window shows each frame once its detections arrive, so it runs behind the live camera by roughly the detector's inference time, but the boxes always line up with the frame.
+
+### 5) Run object detection on a single image
+
+This node loads a fixed local image, processes it once with the original single-graph `model.onnx`, and saves the result with bounding boxes drawn to:
+
+```text
+~/ros2_kilted_ws/src/object_detection/images/output_image.jpg
+```
 
 ```bash
 ros2 run object_detection image_object_detector
@@ -92,21 +120,33 @@ The image file used by the node is currently hard-coded in `src/image_object_det
 
 ## Notes
 
-- The detection node uses a built-in list of labels such as `table`, `chair`, `person`, `cat`, `dog`, `laptop`, and others.
+- The detection nodes use a built-in list of labels (`text_queries_`) such as `table`, `chair`, `person`, `cat`, `dog`, `laptop`, and others. Changing the labels only needs a rebuild; changing the number of labels beyond 16 needs a re-export (see [`scripts/README.md`](scripts/README.md)).
 - The detection threshold is set in the source code (`PRED_THRESHOLD`), and you can tune it if the model is too strict or too loose.
-- Both detection nodes expect the model file and tokenizer to be in the `models/owlvit_onnx` directory.
+- Both detection nodes expect the model files and tokenizer to be in the `models/owlvit_onnx` directory.
+- The inference nodes subscribe with a queue depth of 1, so they always process the newest frame and drop frames that arrive while they are busy.
+- The video detector and depth node use INT8-quantized models for faster CPU inference. Scores can differ slightly from the original FP32 models, mostly for weak detections near the threshold.
 - You can safely ignore warnings regarding kineto not being found (not used...)
 
 ## Typical workflow
+
+Start the publisher, detector, depth node and visualizer together with the launch file:
 
 ```bash
 cd ~/ros2_kilted_ws
 source /opt/ros/kilted/setup.bash
 source install/setup.bash
 
+ros2 launch object_detection object_detection_launch.py
+```
+
+Or run the nodes individually:
+
+```bash
 ros2 run object_detection video_publisher_node
 # in another terminal:
 ros2 run object_detection video_object_detector
+# in another terminal (optional, for depth):
+ros2 run object_detection depth_estimation_node
 # in another terminal (optional, if you want to see video feed)
 ros2 run object_detection visualizer_node
 ```
@@ -126,8 +166,7 @@ If the node fails to start:
 - confirm `LD_LIBRARY_PATH` includes the library directories
 - rebuild after installing missing dependencies
 - ensure `tokenizers_cpp` is available to the CMake build
-
-If you want, I can also add a small launch file so you can start the camera publisher and detector together with one command.
+- if a model file is missing from `models/`, regenerate it with the scripts in [`scripts/`](scripts/README.md)
 
 ---
 # Devlog
