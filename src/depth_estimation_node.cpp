@@ -20,9 +20,10 @@ public:
         RCLCPP_INFO(this->get_logger(), "Starting Depth Estimation Node...");
         this->load_model(MODEL_NAME);
 
+        // Keep only the newest frame so inference never works through a backlog of stale frames
         image_sub_ = this->create_subscription<sensor_msgs::msg::Image>(
-            "video_stream", 
-            10, 
+            "video_stream",
+            rclcpp::SensorDataQoS().keep_last(1),
             std::bind(&DepthEstimationNode::image_callback, this, std::placeholders::_1)
         );
 
@@ -42,7 +43,7 @@ private:
     Ort::MemoryInfo memory_info_{nullptr};
 
     void load_model(const std::string& model_name) {
-        std::string model_path = "/home/bmacraze/ros2_kilted_ws/src/object_detection/models/" + model_name + "/model.onnx";
+        std::string model_path = "/home/bmacraze/ros2_kilted_ws/src/object_detection/models/" + model_name + "/model_int8.onnx";
         RCLCPP_INFO(this->get_logger(), "Loading ONNX model from: %s", model_path.c_str());
         env_ = Ort::Env(ORT_LOGGING_LEVEL_WARNING, "DepthEstimationEnv");
         Ort::SessionOptions session_options;
@@ -53,6 +54,7 @@ private:
     }
 
     void image_callback(const sensor_msgs::msg::Image::SharedPtr msg) {
+        rclcpp::Time start_time = this->now();
         cv_bridge::CvImageConstPtr cv_ptr;
         try {
             cv_ptr = cv_bridge::toCvShare(msg, "bgr8");
@@ -106,7 +108,8 @@ private:
         cv::resize(depth_model_res, depth_orig_res, orig_size);
 
         auto depth_msg = object_detection::msg::DepthMap();
-        depth_msg.header.stamp = this->now();
+        // Stamp with the source frame's time so downstream nodes can pair depth with the right image
+        depth_msg.header.stamp = msg->header.stamp;
         depth_msg.header.frame_id = "depth_frame";
         depth_msg.height = orig_size.height;
         depth_msg.width = orig_size.width;
@@ -124,18 +127,20 @@ private:
 
         depth_pub_->publish(depth_msg);
 
+        rclcpp::Time end_time = this->now();
+        RCLCPP_DEBUG(this->get_logger(), "Depth estimation time: %f ms", (end_time - start_time).nanoseconds() / 1000000.0);
+
         return;
     }
 
     std::vector<float> preprocess_image(const cv::Mat& img, int target_h, int target_w) {
-        cv::Mat rgb, resized, float_img;
-        
-        // Convert from RGB to BGR
+        cv::Mat rgb, resized_img, float_img;
+
+        // Convert from BGR (OpenCV) to RGB expected by the model
         cv::cvtColor(img, rgb, cv::COLOR_BGR2RGB);
 
         // Resize the image to the target dimensions
-        cv::Mat resized_img;
-        cv::resize(img, resized_img, cv::Size(target_w, target_h), 0, 0, cv::INTER_CUBIC);
+        cv::resize(rgb, resized_img, cv::Size(target_w, target_h), 0, 0, cv::INTER_CUBIC);
 
         // Convert to float and normalize
         resized_img.convertTo(float_img, CV_32FC3, 1.0 / 255.0);
