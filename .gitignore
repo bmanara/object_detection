@@ -5,3 +5,5 @@
 /models
 /images
 /log
+__pycache__
+.venv

@@ -10,7 +10,7 @@
 #include "object_detection/msg/depth_map.hpp"
 
 #include "message_filters/subscriber.h"
-#include "message_filters/sync_policies/approximate_time.h"
+#include "message_filters/sync_policies/exact_time.h"
 #include "message_filters/synchronizer.h"
 
 
@@ -20,7 +20,10 @@ public:
     using ImageMsg = sensor_msgs::msg::Image;
     using DetectionArrayMsg = object_detection::msg::DetectionArray;
     using DepthMapMsg = object_detection::msg::DepthMap;
-    using SyncPolicy = message_filters::sync_policies::ApproximateTime<ImageMsg, DetectionArrayMsg>;
+    // Detections carry their source frame's stamp, so match exactly
+    using SyncPolicy = message_filters::sync_policies::ExactTime<ImageMsg, DetectionArrayMsg>;
+    // Detections arrive ~1-2 s after their frame; at 30 fps the image queue must hold that many frames
+    static constexpr uint32_t kSyncQueueSize = 90;
 
     VisualizerNode() : Node("visualizer_node") {
         RCLCPP_INFO(this->get_logger(), "Starting Visualizer Node...");
@@ -28,7 +31,7 @@ public:
         image_sub_.subscribe(this, "/video_stream");
         detections_sub_.subscribe(this, "/detections");
 
-        sync_ = std::make_shared<message_filters::Synchronizer<SyncPolicy>>(SyncPolicy(10), image_sub_, detections_sub_);
+        sync_ = std::make_shared<message_filters::Synchronizer<SyncPolicy>>(SyncPolicy(kSyncQueueSize), image_sub_, detections_sub_);
         sync_->registerCallback(std::bind(&VisualizerNode::sync_callback, this, std::placeholders::_1, std::placeholders::_2));
 
         depth_sub_ = this->create_subscription<DepthMapMsg>(
@@ -86,6 +89,7 @@ private:
     }
 
     void depth_callback(const DepthMapMsg::SharedPtr depth_msg) {
+        // TODO: Start building 3D point cloud using depth_image_proc
         RCLCPP_DEBUG(this->get_logger(), "Received depth map. Size: %dx%d", depth_msg->width, depth_msg->height);
 
         cv::Mat depth_image(depth_msg->height, depth_msg->width, CV_32FC1, const_cast<float*>(depth_msg->depth_data.data()));
