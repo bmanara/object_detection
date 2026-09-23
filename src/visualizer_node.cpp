@@ -9,9 +9,9 @@
 #include "object_detection/msg/detection_array.hpp"
 #include "object_detection/msg/depth_map.hpp"
 
-#include "message_filters/subscriber.h"
-#include "message_filters/sync_policies/exact_time.h"
-#include "message_filters/synchronizer.h"
+#include "message_filters/subscriber.hpp"
+#include "message_filters/sync_policies/exact_time.hpp"
+#include "message_filters/synchronizer.hpp"
 
 
 class VisualizerNode : public rclcpp::Node {
@@ -28,8 +28,8 @@ public:
     VisualizerNode() : Node("visualizer_node") {
         RCLCPP_INFO(this->get_logger(), "Starting Visualizer Node...");
 
-        image_sub_.subscribe(this, "/video_stream");
-        detections_sub_.subscribe(this, "/detections");
+        image_sub_.subscribe(this, "/video_stream", rclcpp::SensorDataQoS().keep_last(1));
+        detections_sub_.subscribe(this, "/detections", rclcpp::SensorDataQoS().keep_last(1));
 
         sync_ = std::make_shared<message_filters::Synchronizer<SyncPolicy>>(SyncPolicy(kSyncQueueSize), image_sub_, detections_sub_);
         sync_->registerCallback(std::bind(&VisualizerNode::sync_callback, this, std::placeholders::_1, std::placeholders::_2));
