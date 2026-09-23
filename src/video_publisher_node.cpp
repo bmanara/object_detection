@@ -53,6 +53,7 @@ class VideoPublisherNode : public rclcpp::Node {
             msg->header.frame_id = "camera_frame";
 
             image_pub_->publish(*msg);
+            RCLCPP_DEBUG(this->get_logger(), "Published video frame at time: %f", msg->header.stamp.sec + msg->header.stamp.nanosec * 1e-9);
         }
 };
 

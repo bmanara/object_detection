@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.20)
 project(object_detection)
 
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
@@ -21,6 +23,7 @@ find_package(OpenCV REQUIRED COMPONENTS dnn)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/Detection.msg"
   "msg/DetectionArray.msg"
+  "msg/DepthMap.msg"
   DEPENDENCIES std_msgs
 )
 
@@ -111,11 +114,24 @@ target_link_libraries(visualizer_node PUBLIC
   ${OpenCV_LIBS}
 )
 
+add_executable(depth_estimation_node src/depth_estimation_node.cpp)
+target_link_libraries(depth_estimation_node PUBLIC
+  rclcpp::rclcpp
+  sensor_msgs::sensor_msgs_library
+  cv_bridge::cv_bridge
+  image_transport::image_transport
+  ${OpenCV_LIBS}
+  ${ONNXRUNTIME_LIB}
+  ${TORCH_LIBRARIES}
+)
+
 rosidl_get_typesupport_target(cpp_typesupport_target "${PROJECT_NAME}" "rosidl_typesupport_cpp")
 target_link_libraries(image_object_detector PRIVATE "${cpp_typesupport_target}")
 target_link_libraries(video_object_detector PRIVATE "${cpp_typesupport_target}")
 target_link_libraries(visualizer_node PRIVATE "${cpp_typesupport_target}")
+target_link_libraries(depth_estimation_node PRIVATE "${cpp_typesupport_target}")
 
+# Include directories for generated message headers (for custom messages to be built properly)
 target_include_directories(video_object_detector PRIVATE
   ${CMAKE_CURRENT_BINARY_DIR}/rosidl_generator_cpp
   ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}/rosidl_generator_cpp
@@ -126,8 +142,22 @@ target_include_directories(visualizer_node PRIVATE
   ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}/rosidl_generator_cpp
 )
 
-install(TARGETS image_object_detector video_object_detector video_publisher_node visualizer_node
+target_include_directories(depth_estimation_node PRIVATE
+  ${CMAKE_CURRENT_BINARY_DIR}/rosidl_generator_cpp
+  ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}/rosidl_generator_cpp
+)
+
+install(TARGETS 
+  image_object_detector 
+  video_object_detector 
+  video_publisher_node 
+  visualizer_node 
+  depth_estimation_node
   RUNTIME DESTINATION lib/${PROJECT_NAME}
+)
+
+install(DIRECTORY launch
+  DESTINATION share/${PROJECT_NAME}/
 )
 
 ament_package()

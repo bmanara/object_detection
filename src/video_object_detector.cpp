@@ -270,7 +270,7 @@ class ObjectDetectionNode : public rclcpp::Node {
                         cv::putText(img, text_queries_[j], cv::Point(static_cast<int>(x1), static_cast<int>(y1) - 5),
                                     cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 255, 0), 1);
 
-                        RCLCPP_INFO(this->get_logger(), "Detected '%s' with score %.2f at [%.2f, %.2f, %.2f, %.2f]",
+                        RCLCPP_DEBUG(this->get_logger(), "Detected '%s' with score %.2f at [%.2f, %.2f, %.2f, %.2f]",
                                     text_queries_[j].c_str(), score, x1, y1, x2, y2);
                     }
                 }
@@ -279,11 +279,6 @@ class ObjectDetectionNode : public rclcpp::Node {
             if (!detections_msg.detections.empty()) {
                 detections_pub_->publish(detections_msg);
             }
-
-            // Save to the same images directory the node logs, and report the actual path used.
-            const std::string out_path = "/home/bmacraze/ros2_kilted_ws/src/object_detection/images/output_image.jpg";
-            cv::imwrite(out_path, img);
-            RCLCPP_INFO(this->get_logger(), "Output image saved to: %s", out_path.c_str());
         }
 };
 
